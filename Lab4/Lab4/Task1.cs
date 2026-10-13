@@ -29,7 +29,9 @@ namespace Lab4
         }
 
        
-        private void DrawPolygon(Graphics g, List<PointF> poly, Pen pen, SolidBrush brush)
+        // closed = true: соединить последнюю вершину с первой (готовый полигон).
+        // Для полигона, который ещё строится, контур остаётся незамкнутым.
+        private void DrawPolygon(Graphics g, List<PointF> poly, Pen pen, SolidBrush brush, bool closed = true)
         {
             int count = poly.Count;
             if (count <= 0)
@@ -49,6 +51,10 @@ namespace Lab4
             {
                 g.DrawLine(pen, poly[i], poly[i + 1]);
             }
+
+            // Замыкающее ребро нужно только при 3+ вершинах: у ребра (2 вершины) его нет
+            if (closed && count >= 3)
+                g.DrawLine(pen, poly[count - 1], poly[0]);
         }
 
         
@@ -75,7 +81,7 @@ namespace Lab4
                 using (Pen penCurrent = new Pen(Color.Blue, 1.5f))
                 using (SolidBrush brushCurrent = new SolidBrush(Color.Blue))
                 {
-                    DrawPolygon(g, currentPolygon, penCurrent, brushCurrent);
+                    DrawPolygon(g, currentPolygon, penCurrent, brushCurrent, closed: false);
                 }
             }
         }

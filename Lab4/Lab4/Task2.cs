@@ -155,6 +155,7 @@ namespace Lab4
             Affine.ApplyTransform(poly, m);
             ShowMatrix(m);
             lblStatus.Text = name + " — применено.";
+            T3_OnPolygonsChanged(); // выбранные в Task3 рёбра следуют за полигоном
             pbCanvas.Invalidate();
         }
 
@@ -339,8 +340,7 @@ namespace Lab4
                     if (poly.Count == 1)
                         e.Graphics.FillEllipse(brush, poly[0].X - 4f, poly[0].Y - 4f, 8f, 8f);
                     else
-                        for (int i = 0; i < poly.Count - 1; i++)
-                            e.Graphics.DrawLine(pen, poly[i], poly[i + 1]);
+                        DrawPolygon(e.Graphics, poly, pen, brush); // с замыкающим ребром
                 }
             }
 

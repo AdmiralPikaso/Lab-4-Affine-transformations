@@ -23,14 +23,24 @@ namespace Lab4
             public PointF A;
             public PointF B;
 
-            public T3Edge(PointF a, PointF b)
+            // Откуда взято ребро: номер полигона и номер ребра в нём.
+            // -1 — ребро нарисовано пользователем и ни к какому полигону не привязано.
+            public int PolyIndex;
+            public int EdgeIndex;
+
+            public T3Edge(PointF a, PointF b, int polyIndex = -1, int edgeIndex = -1)
             {
                 A = a;
                 B = b;
+                PolyIndex = polyIndex;
+                EdgeIndex = edgeIndex;
             }
         }
 
         private const float EdgePickTolerance = 7f;
+
+        // Цвет выделенного ребра (первое ребро при пересечении, ребро для классификации точки)
+        private static readonly Color EdgeHighlightColor = Color.Blue;
 
         private Panel pnlTask3;
         private Label lblT3Status;
@@ -60,21 +70,40 @@ namespace Lab4
             pbCanvas.MouseMove += T3_MouseMove;
             pbCanvas.MouseDown += T3_MouseDown;
             pbCanvas.Paint += T3_Paint;
+            btnClear.Click += (s, e) =>
+            {
+                // Выбранные рёбра/точки ссылаются на удалённые полигоны — сбрасываем их
+                T3_ClearState();
+                T3_UpdateHint();
+                if (task3Mode != Task3Mode.None)
+                    T3_UpdateStatus("Сцена очищена. Режим: " + T3_ModeName(task3Mode) + ".");
+                pbCanvas.Invalidate();
+            };
         }
 
         private void BuildTask3UI()
         {
-            ClientSize = new Size(1512, 760);
-            MinimumSize = new Size(1528, 750);
+            // Раскладка слева направо: холст | панель задания 2 | панель задания 3.
+            // Позиции задаются явно, иначе панель 2 при расширении окна
+            // уезжает вправо (Anchor = Right) и перекрывает панель 3.
+            const int panelWidth = 280;
+            ClientSize = new Size(1808, 760);
+            MinimumSize = new Size(1100, 750);
+            pbCanvas.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left;
+            pbCanvas.Width = ClientSize.Width - 12 - 12 - panelWidth - 8 - panelWidth - 20;
+            pnlTask2.Left = pbCanvas.Right + 12;
 
             pnlTask3 = new Panel
             {
-                Location = new Point(1212, 48),
-                Size = new Size(280, 700),
+                Location = new Point(pnlTask2.Right + 8, 48),
+                Size = new Size(panelWidth, 700),
                 Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Right,
                 BorderStyle = BorderStyle.FixedSingle
             };
             Controls.Add(pnlTask3);
+
+            // Холст тянется вместе с окном, панели остаются прижатыми к правому краю
+            pbCanvas.Anchor |= AnchorStyles.Right;
 
             pnlTask3.Controls.Add(new Label
             {
@@ -187,6 +216,7 @@ namespace Lab4
                 return;
 
             t3Mouse = new PointF(e.X, e.Y);
+            T3_SyncEdges();
 
             switch (task3Mode)
             {
@@ -217,6 +247,7 @@ namespace Lab4
                 return;
 
             PointF p = new PointF(e.X, e.Y);
+            T3_SyncEdges();
 
             if (e.Button == MouseButtons.Right)
             {
@@ -289,6 +320,8 @@ namespace Lab4
             }
 
             t3SecondEdgePoints.Add(p);
+            if (t3SecondEdgePoints.Count == 1)
+                t3HasCompletedSecond = false; // начато новое второе ребро — старое убираем
 
             if (t3SecondEdgePoints.Count >= 2)
             {
@@ -349,6 +382,65 @@ namespace Lab4
                 head, res.X, res.Y);
         }
 
+        // Берёт актуальные координаты ребра из его полигона.
+        // false — полигона/ребра больше нет (например, сцену очистили).
+        private bool T3_SyncEdge(ref T3Edge edge)
+        {
+            if (edge.PolyIndex < 0)
+                return true; // ребро пользователя — координаты свои
+
+            if (edge.PolyIndex >= polygons.Count)
+                return false;
+
+            List<PointF> poly = polygons[edge.PolyIndex];
+            int edgeCount = poly.Count >= 3 ? poly.Count : poly.Count - 1;
+            if (edge.EdgeIndex < 0 || edge.EdgeIndex >= edgeCount)
+                return false;
+
+            edge.A = poly[edge.EdgeIndex];
+            edge.B = poly[(edge.EdgeIndex + 1) % poly.Count];
+            return true;
+        }
+
+        private void T3_SyncEdges()
+        {
+            if (t3HasFirstEdge && !T3_SyncEdge(ref t3FirstEdge))
+            {
+                t3HasFirstEdge = false;
+                t3HasIntersection = false;
+            }
+            if (t3HasSelectedEdge && !T3_SyncEdge(ref t3SelectedEdge))
+                t3HasSelectedEdge = false;
+        }
+
+        // Вызывается после изменения полигонов (аффинное преобразование):
+        // пересчитывает результат текущей проверки без участия пользователя.
+        private void T3_OnPolygonsChanged()
+        {
+            if (task3Mode == Task3Mode.None)
+                return;
+
+            T3_SyncEdges();
+
+            switch (task3Mode)
+            {
+                case Task3Mode.EdgeIntersection:
+                    if (t3HasFirstEdge && t3SecondEdgePoints.Count == 1)
+                        T3_UpdateIntersectionPreview();
+                    else if (t3HasFirstEdge && t3HasCompletedSecond)
+                        T3_UpdateStatus(T3_ComputeIntersection(t3FirstEdge, t3CompletedSecond, false));
+                    break;
+                case Task3Mode.PointInPolygon:
+                    if (t3HasTestPoint)
+                        T3_UpdateStatus(T3_DescribePointInPolygon(t3TestPoint));
+                    break;
+                case Task3Mode.PointVsEdge:
+                    if (t3HasSelectedEdge && t3HasTestPoint)
+                        T3_UpdateStatus(T3_DescribePointVsEdge(t3TestPoint));
+                    break;
+            }
+        }
+
         private string T3_DescribePointInPolygon(PointF p)
         {
             StringBuilder sb = new StringBuilder();
@@ -391,6 +483,8 @@ namespace Lab4
             if (task3Mode == Task3Mode.None)
                 return;
 
+            T3_SyncEdges();
+
             Graphics g = e.Graphics;
             g.SmoothingMode = SmoothingMode.AntiAlias;
 
@@ -411,7 +505,7 @@ namespace Lab4
         private void T3_PaintIntersection(Graphics g)
         {
             if (t3HasFirstEdge)
-                using (Pen pen = new Pen(Color.OrangeRed, 3f))
+                using (Pen pen = new Pen(EdgeHighlightColor, 3f))
                     g.DrawLine(pen, t3FirstEdge.A, t3FirstEdge.B);
 
             using (Pen pen = new Pen(Color.Purple, 2f))
@@ -464,7 +558,7 @@ namespace Lab4
             if (!t3HasSelectedEdge)
                 return;
 
-            using (Pen pen = new Pen(Color.OrangeRed, 3f))
+            using (Pen pen = new Pen(EdgeHighlightColor, 3f))
                 g.DrawLine(pen, t3SelectedEdge.A, t3SelectedEdge.B);
 
             if (!t3HasTestPoint)
@@ -486,13 +580,17 @@ namespace Lab4
             for (int i = 0; i < polygons.Count; i++)
             {
                 List<PointF> poly = polygons[i];
-                for (int j = 0; j + 1 < poly.Count; j++)
+                // У полигона из 3+ вершин есть ещё замыкающее ребро (последняя -> первая)
+                int edgeCount = poly.Count >= 3 ? poly.Count : poly.Count - 1;
+                for (int j = 0; j < edgeCount; j++)
                 {
-                    float d = DistanceToSegment(p, poly[j], poly[j + 1]);
+                    PointF a = poly[j];
+                    PointF b = poly[(j + 1) % poly.Count];
+                    float d = DistanceToSegment(p, a, b);
                     if (d <= bestDistance)
                     {
                         bestDistance = d;
-                        best = new T3Edge(poly[j], poly[j + 1]);
+                        best = new T3Edge(a, b, i, j);
                         found = true;
                     }
                 }
@@ -559,14 +657,23 @@ namespace Lab4
             if (n < 3)
                 return false;
 
+            // Все повороты должны быть в одну сторону, а суммарный угол поворота
+            // при обходе — ровно ±360°. Без второго условия самопересекающиеся
+            // полигоны (звезда, двойной обход) ошибочно считались бы выпуклыми.
             int sign = 0;
+            double totalTurn = 0;
             for (int i = 0; i < n; i++)
             {
                 PointF a = poly[i];
                 PointF b = poly[(i + 1) % n];
                 PointF c = poly[(i + 2) % n];
 
-                double cross = (b.X - a.X) * (c.Y - b.Y) - (b.Y - a.Y) * (c.X - b.X);
+                double ux = b.X - a.X, uy = b.Y - a.Y;
+                double vx = c.X - b.X, vy = c.Y - b.Y;
+                double cross = ux * vy - uy * vx;
+                double dot = ux * vx + uy * vy;
+                totalTurn += Math.Atan2(cross, dot);
+
                 if (Math.Abs(cross) < 1e-9)
                     continue;
 
@@ -577,7 +684,7 @@ namespace Lab4
                     return false;
             }
 
-            return sign != 0;
+            return sign != 0 && Math.Abs(Math.Abs(totalTurn) - 2 * Math.PI) < 1e-3;
         }
 
         private static float DistanceToSegment(PointF p, PointF a, PointF b)
