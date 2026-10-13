@@ -83,6 +83,9 @@ namespace Lab4
         
         private void PbCanvas_MouseDown(object sender, MouseEventArgs e)
         {
+            if (task3Mode != Task3Mode.None)
+                return;
+
             if (e.Button == MouseButtons.Left)
             {
                 

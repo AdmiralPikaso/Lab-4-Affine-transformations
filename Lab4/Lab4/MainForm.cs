@@ -20,6 +20,7 @@ namespace Lab4
             InitializeComponent();
             InitializeTask1();
             InitializeTask2();
+            InitializeTask3();
         }
     }
 }
